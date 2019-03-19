@@ -1,0 +1,94 @@
+CREATE PROCEDURE sp_CreateForeignKey
+	@PrimaryTable SYSNAME = NULL,
+	@PrimaryField SYSNAME = NULL,
+	@ForeignTable SYSNAME = NULL,
+	@ForeignField SYSNAME = NULL
+AS
+BEGIN
+-- =============================================
+-- Create date: 12/28/2008
+-- Description:	Creates a primary key foreign key relationship.
+-- =============================================
+DECLARE @Instructions TABLE
+(
+	[INFO] NVARCHAR(4000)
+)
+	
+	DECLARE @sSQL NVARCHAR(4000)
+	DECLARE @sConstraint NVARCHAR(4000)
+	DECLARE @sAllowed NVARCHAR(200)
+	DECLARE @iLoop INT
+	SET NOCOUNT ON
+
+	IF @PrimaryTable IS NULL OR @PrimaryField IS NULL OR @ForeignTable IS NULL
+	BEGIN
+		INSERT INTO @Instructions (Info)
+		VALUES (N'sp_CreateForeignKey')
+
+		INSERT INTO @Instructions (Info)
+		VALUES (N'Creates a primary key - foreign key relationship.')
+
+		INSERT INTO @Instructions (Info)
+		VALUES (N'sp_CreateForeignKey PrimaryTable,PrimaryField,ForeignTable,ForeignField')
+
+		INSERT INTO @Instructions (Info)
+		VALUES (N'EXAMPLE:')
+
+		INSERT INTO @Instructions (Info)
+		VALUES (N'EXEC sp_CreateForeignKey ''Countries'',''CountryID'',''Employees'',''CountryID''')
+		
+		INSERT INTO @Instructions (Info)
+		VALUES (N'EXEC sp_CreateForeignKey ''Countries'',''CountryID'',''Employees''')
+		
+		INSERT INTO @Instructions (Info)
+		VALUES (N'If ForeignField is omitted, PrimaryField is used as ForeignField.')
+	
+		SELECT [Info] As [Instructions]
+		FROM @Instructions
+
+		RETURN
+	END
+
+	IF LEN(ISNULL(@ForeignField,'')) = 0
+	BEGIN
+		SET @ForeignField = @PrimaryField
+	END
+	-- REMOVE ILLEGAL CHARS.	
+	SET @PrimaryTable = REPLACE(REPLACE(@PrimaryTable,N']',N''),N'[',N'')
+	SET @PrimaryField = REPLACE(REPLACE(@PrimaryField,N']',N''),N'[',N'')
+	SET @ForeignTable = REPLACE(REPLACE(@ForeignTable,N']',N''),N'[',N'')
+	SET @ForeignField = REPLACE(REPLACE(@ForeignField,N']',N''),N'[',N'')
+	
+	-- CREATE @sConstraint
+	SET @sConstraint = N'FK_' + @PrimaryTable + @PrimaryField + @ForeignTable + @ForeignField
+
+	-- REMOVE ILLEGAL CHARS FROM @sConstraint
+	SET @sAllowed = N'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_123457890'
+	SET @iLoop = LEN(@sConstraint)
+	WHILE @iLoop >= 1
+	BEGIN
+		IF CHARINDEX(SUBSTRING(@sConstraint,@iLoop,1),@sAllowed) = 0
+		BEGIN
+			SET @sConstraint = LEFT(@sConstraint,@iLoop-1) + SUBSTRING(@sConstraint,@iLoop+1,LEN(@sConstraint)-@iLoop)
+		END
+		SET @iLoop = @iLoop - 1
+	END
+	
+	-- SHOW THE USER THE SQL TO RUN.
+	SET @sSQL = N'ALTER TABLE [' + @ForeignTable + N'] ADD CONSTRAINT [' + @sConstraint + N'] FOREIGN KEY( [' + @ForeignField + N'] ) REFERENCES [' + @PrimaryTable + N'] ( [' + @PrimaryField + N'])' 
+	
+	INSERT INTO @Instructions (Info)
+	VALUES (N'--Copy the bottom line to the query window and run it.')
+
+	INSERT INTO @Instructions (Info)
+	VALUES (N'--Also, save it for when you move your changes into production.')
+
+	INSERT INTO @Instructions (Info)
+	VALUES (@sSQL)
+
+	SELECT [Info] As [Instructions]
+	FROM @Instructions
+    
+END
+GO
+
