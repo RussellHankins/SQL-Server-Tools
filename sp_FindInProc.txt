@@ -1,0 +1,54 @@
+CREATE PROCEDURE sp_FindInProc
+	@Text1 VARCHAR(200)='',
+	@Text2 VARCHAR(200)=''
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+	IF LEN(ISNULL(@Text1,'')) = 0 AND LEN(ISNULL(@Text2,'')) = 0
+	BEGIN
+		DECLARE @Info TABLE
+		(
+			Info VARCHAR(100)
+		)
+		INSERT INTO @Info (Info) VALUES ('sp_FindInProc {Item}')
+		INSERT INTO @Info (Info) VALUES ('Searches all stored procedures in the current database for text1 and text2')
+		INSERT INTO @Info (Info) VALUES ('Lists the stored procedure, and a sample of the found text')
+		INSERT INTO @Info (Info) VALUES ('')
+		INSERT INTO @Info (Info) VALUES ('Check out other cool tools like')
+		INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable')
+		INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType')
+		INSERT INTO @Info (Info) VALUES ('sp_DropColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_Find')
+		INSERT INTO @Info (Info) VALUES ('sp_FindColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs')
+		INSERT INTO @Info (Info) VALUES ('sp_List')		
+		INSERT INTO @Info (Info) VALUES ('sp_varinsp')
+						
+		SELECT Info from @Info
+		RETURN
+	END
+
+	IF LEN(ISNULL(@Text2,''))=0
+	BEGIN
+		SELECT so.name as ProcName,SUBSTRING(sc.text,CHARINDEX(@Text1,sc.text)-20,40) as Sample
+		FROM sysobjects as so
+		INNER JOIN syscomments as sc
+		ON so.id = sc.id
+		WHERE so.xtype ='P'
+		AND sc.text like '%'+@Text1+'%'		
+	END ELSE
+	BEGIN
+		SELECT so.name as ProcName
+		,SUBSTRING(sc.text,CHARINDEX(@Text1,sc.text)-20,40) as Sample1
+		,SUBSTRING(sc.text,CHARINDEX(@Text2,sc.text)-20,40) as Sample2
+		FROM sysobjects as so
+		INNER JOIN syscomments as sc
+		ON so.id = sc.id
+		WHERE so.xtype ='P'
+		AND sc.text like '%'+@Text1+'%'
+		AND sc.text like '%'+@Text2+'%'
+	END
+END
+GO
+
