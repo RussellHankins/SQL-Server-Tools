@@ -1,0 +1,81 @@
+CREATE PROCEDURE sp_FindColumn
+	@Column1 VARCHAR(200)='',
+	@Column2 VARCHAR(200)=''
+AS
+BEGIN
+	SET NOCOUNT ON;
+	DECLARE @Loop INT
+	DECLARE @Count INT
+	DECLARE @Database VARCHAR(200)
+	DECLARE @SQL NVARCHAR(4000)
+	CREATE TABLE #Output
+	(
+		[DatabaseID] INT,
+		[Item] VARCHAR(200),
+		[Type] VARCHAR(50)
+	)
+    DECLARE @Databases TABLE
+	(
+		[DatabaseID] INT IDENTITY(1,1),
+		[Database] VARCHAR(200)
+	)
+
+	IF LEN(ISNULL(@Column1,'')) = 0
+	BEGIN
+		DECLARE @Info TABLE
+		(
+			Info VARCHAR(100)
+		)
+		INSERT INTO @Info (Info) VALUES ('sp_FindColumn {Item1},{Item2}')
+		INSERT INTO @Info (Info) VALUES ('Searches all databases for a column name');
+		INSERT INTO @Info (Info) VALUES (' containing {Item} and {Item2} ')
+		INSERT INTO @Info (Info) VALUES ('{Item2} is optional.')
+		INSERT INTO @Info (Info) VALUES ('Both tables and views are searched.')
+		INSERT INTO @Info (Info) VALUES ('')
+		INSERT INTO @Info (Info) VALUES ('Check out other cool tools like')
+		INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable')
+		INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType')
+		INSERT INTO @Info (Info) VALUES ('sp_DropColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_Find')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInProc')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs')
+		INSERT INTO @Info (Info) VALUES ('sp_List')		
+		INSERT INTO @Info (Info) VALUES ('sp_varinsp')
+						
+		SELECT Info from @Info
+		RETURN
+	END
+
+	INSERT INTO @Databases ([Database])
+	SELECT name from sysdatabases where name not in ('master','tempdb','model','msdb')
+
+	SET @Count = @@ROWCOUNT
+	SET @Loop = 1
+	WHILE @Loop <= @Count
+	BEGIN
+		SELECT @Database = [Database]
+		FROM @Databases
+		WHERE DatabaseID = @Loop
+		
+		IF LEN(@Column2)=0
+		BEGIN
+			SET @SQL = N'INSERT INTO #Output([DatabaseID],Item,[Type]) SELECT ' + CONVERT(VARCHAR,@Loop) + ',so.name+''.''+sc.name,case when so.xtype=''U'' then ''Table'' ELSE ''View'' END from ' + @Database + '..sysobjects as so inner join ' + @Database + '..syscolumns as sc on so.id = sc.id WHERE so.xtype IN (''U'',''V'') AND sc.NAME LIKE ''%' + @Column1 + '%'''
+		END ELSE
+		BEGIN
+			SET @SQL = N'INSERT INTO #Output([DatabaseID],Item,[Type]) SELECT ' + CONVERT(VARCHAR,@Loop) + ',so.name+''.''+sc.name,case when so.xtype=''U'' then ''Table'' ELSE ''View'' END from ' + @Database + '..sysobjects as so inner join ' + @Database + '..syscolumns as sc on so.id = sc.id WHERE so.xtype IN (''U'',''V'') AND sc.NAME LIKE ''%' + @Column1 + '%'' and sc.NAME LIKE ''%' + @Column2 + '%'''
+		END
+		
+		EXEC sp_sqlexec @SQL
+		SET @Loop = @Loop + 1
+	END
+
+	SELECT D.[Database],O.[Type],O.Item
+	FROM #Output AS O
+	INNER JOIN @Databases AS D
+	ON O.DatabaseID = D.DatabaseID
+	ORDER BY D.[Database],O.[Type],O.Item
+
+	DROP TABLE #Output
+END
+GO
+
