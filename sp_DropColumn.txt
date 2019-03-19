@@ -1,0 +1,116 @@
+CREATE PROCEDURE sp_DropColumn
+	@TableName SYSNAME=NULL,
+	@ColumnName SYSNAME=NULL
+AS
+BEGIN
+DECLARE @Constraints TABLE
+(
+	[RowID] INT IDENTITY(1,1),
+	[ConstraintName] SYSNAME
+);
+DECLARE @Info TABLE
+(
+	ID INT IDENTITY(1,1),
+	Info NVARCHAR(4000),
+	PRIMARY KEY(ID)
+);
+DECLARE @iCount INT;
+DECLARE @iLoop INT;
+DECLARE @Constraint SYSNAME;
+DECLARE @sql NVARCHAR(4000);
+
+SET NOCOUNT ON;
+
+IF LEN(ISNULL(@TableName,'')) = 0 OR LEN(ISNULL(@ColumnName,'')) = 0
+BEGIN
+	INSERT INTO @Info (Info) VALUES ('sp_DropColumn table,column');
+	INSERT INTO @Info (Info) VALUES ('Displays the sql needed to drop a column.');
+	INSERT INTO @Info (Info) VALUES ('Doesn`t actually drop the column.');
+	INSERT INTO @Info (Info) VALUES ('Check out other cool tools like');
+	INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable');
+	INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType');
+	INSERT INTO @Info (Info) VALUES ('sp_Find');
+	INSERT INTO @Info (Info) VALUES ('sp_FindColumn');
+	INSERT INTO @Info (Info) VALUES ('sp_FindInProc');
+	INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs');
+	INSERT INTO @Info (Info) VALUES ('sp_List');
+	SELECT Info FROM @Info ORDER BY ID;
+	RETURN;
+END;
+
+IF NOT EXISTS(SELECT SO.id FROM SYSOBJECTS AS SO
+			INNER JOIN SYSCOLUMNS AS SC
+			ON SO.id = SC.id
+			WHERE SO.name = @TableName
+			AND SC.name = @ColumnName
+			AND SO.xtype = 'U')
+BEGIN
+	INSERT INTO @Info (Info) VALUES ('-- Column ' + @ColumnName + ' wasn`t found in table ' + @TableName);
+	SELECT Info FROM @Info ORDER BY ID;
+	RETURN;
+END
+
+INSERT INTO @Constraints (ConstraintName)
+select dc.name as ConstraintName
+from sys.default_constraints as dc
+inner join sysobjects as so
+on dc.parent_object_id = so.id
+inner join syscolumns as sc
+on dc.parent_column_id = sc.colid
+and dc.parent_object_id = sc.id
+WHERE so.Name = @TableName
+AND sc.Name = @ColumnName;
+
+-- Get the list of foreign key constraints.
+WITH CTE_FOREIGN_KEYS (ConstraintName,ChildTable,ChildField,ParentTable,ParentField)
+AS
+(
+SELECT SON.name AS ConstraintName
+,SOF.name AS ChildTable
+,SCF.name AS ChildColumn
+,SOR.name AS ParentTable
+,SCR.name AS ParentColumn
+FROM SYSFOREIGNKEYS AS SF
+INNER JOIN SYSOBJECTS AS SON
+ON SF.constid = SON.id
+INNER JOIN SYSOBJECTS AS SOF
+ON SF.fkeyid = SOF.id
+INNER JOIN SYSOBJECTS AS SOR
+ON SF.rkeyid = SOR.id
+INNER JOIN SYSCOLUMNS AS SCF
+ON SF.fkeyid = SCF.id
+AND SF.fkey = SCF.colid
+INNER JOIN SYSCOLUMNS AS SCR
+ON SF.rkeyid = SCR.id
+AND SF.rkey = SCR.colid
+)
+INSERT INTO @Constraints (ConstraintName)
+SELECT ConstraintName
+FROM CTE_FOREIGN_KEYS
+WHERE (ChildTable = @TableName AND ChildField = @ColumnName)
+OR (ParentTable = @TableName AND ParentField = @TableName)
+AND ConstraintName NOT IN (SELECT ConstraintName FROM @Constraints);
+
+SELECT @iCount = COUNT(*) FROM @Constraints;
+
+SET @iLoop = 1
+WHILE @iLoop <= @iCount
+BEGIN
+	SELECT @Constraint = ConstraintName
+	FROM @Constraints
+	WHERE RowID = @iLoop;
+
+	SET @sql = 'ALTER TABLE [' + @TableName + '] DROP CONSTRAINT [' + @Constraint + ']';
+	INSERT INTO @Info (Info) VALUES (@sql);
+	-- exec sp_executesql @sql	
+	
+	SET @iLoop = @iLoop + 1;
+END;
+
+SET @sql = 'ALTER TABLE [' + @TableName + '] DROP COLUMN [' + @ColumnName + ']';
+INSERT INTO @Info (Info) VALUES (@sql);
+SELECT Info FROM @Info ORDER BY ID;
+--exec sp_executesql @sql
+END
+GO
+
