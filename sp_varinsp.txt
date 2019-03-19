@@ -1,0 +1,238 @@
+CREATE PROCEDURE sp_varinsp
+	@proc NVARCHAR(100)=NULL,
+	@var NVARCHAR(100)=NULL
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+    DECLARE @Info TABLE
+	(
+		ID INT IDENTITY(1,1),
+		Info NVARCHAR(MAX),
+		PRIMARY KEY(ID)
+	);
+	DECLARE @ProcsToProcess TABLE
+	(
+		ID INT IDENTITY(1,1),
+		DatabaseName NVARCHAR(100),
+		ProcName NVARCHAR(100),
+		History NVARCHAR(MAX),
+		PRIMARY KEY(ID)
+	);
+	DECLARE @Databases TABLE
+	(
+		ID INT IDENTITY(1,1),
+		DatabaseName NVARCHAR(100),
+		PRIMARY KEY(ID)
+	);
+	CREATE TABLE #StoredProcs
+	(
+		ID INT IDENTITY(1,1),
+		DatabaseName NVARCHAR(100),
+		ProcName NVARCHAR(100),
+		PRIMARY KEY(ID)
+	);
+	CREATE TABLE #ProcData
+	(
+		ID INT IDENTITY(1,1),
+		ProcData NVARCHAR(MAX),
+		PRIMARY KEY(ID)
+	);
+	DECLARE @Found TABLE
+	(
+		ID INT IDENTITY(1,1),
+		DatabaseName NVARCHAR(100),
+		ProcName NVARCHAR(100),
+		History NVARCHAR(MAX),
+		Example1 NVARCHAR(50),
+		Example2 NVARCHAR(50),
+		Example3 NVARCHAR(50),
+		Example4 NVARCHAR(50),
+		Example5 NVARCHAR(50),
+		Example6 NVARCHAR(50),
+		PRIMARY KEY(ID)
+	);
+	DECLARE @ProcsToProcessCount INT;
+	DECLARE @ProcsToProcessLoop INT;
+	DECLARE @DatabaseCount INT;
+	DECLARE @DatabaseLoop INT;
+	DECLARE @DatabaseName NVARCHAR(100);
+	DECLARE @ProcName NVARCHAR(100);	
+	DECLARE @DatabaseName2 NVARCHAR(100);
+	DECLARE @ProcName2 NVARCHAR(100);
+	DECLARE @History NVARCHAR(MAX);
+	DECLARE @SQL NVARCHAR(4000);
+	DECLARE @ProcSQL NVARCHAR(MAX);
+	DECLARE @CurrentDB NVARCHAR(100);
+	DECLARE @ProcDataCount INT;
+	DECLARE @ProcDataLoop INT;
+	DECLARE @Example1 NVARCHAR(50);
+	DECLARE @Example2 NVARCHAR(50);
+	DECLARE @Example3 NVARCHAR(50);
+	DECLARE @Example4 NVARCHAR(50);
+	DECLARE @Example5 NVARCHAR(50);
+	DECLARE @Example6 NVARCHAR(50);
+	DECLARE @Search1 INT;
+	DECLARE @Search2 INT;
+
+	IF LEN(ISNULL(@proc,'')) = 0 OR LEN(ISNULL(@var,'')) = 0
+	BEGIN
+		INSERT into @Info (Info) VALUES (N'sp_varinsp proc,variable');
+		INSERT into @Info (Info) VALUES (N'searches proc for variable');
+		INSERT into @Info (Info) VALUES (N'Recursively searches stored procs that are used in proc.');
+		INSERT into @Info (Info) VALUES (N'It only searches the current database and DTS_Master.');
+		INSERT into @Info (Info) VALUES (N'It sometimes takes a few minutes to finish. Be patient.');
+		INSERT into @Info (Info) VALUES (N'Example: Use FEX_DEV;');
+		INSERT into @Info (Info) VALUES (N'EXEC sp_varinsp ''pr_iDMSConversion_Acct_v4_LoadXML_r2'',''D-37464'';');
+		INSERT INTO @Info (Info) VALUES ('Check out other cool tools like');
+		INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable')
+		INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType')
+		INSERT INTO @Info (Info) VALUES ('sp_DropColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_Find')
+		INSERT INTO @Info (Info) VALUES ('sp_FindColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInProc')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs')
+		INSERT INTO @Info (Info) VALUES ('sp_List')
+		SELECT Info FROM @Info ORDER BY ID;
+	END ELSE
+	BEGIN
+		-- Get the list of databases.
+		SET @CurrentDB = DB_NAME();
+		INSERT INTO @Databases (DatabaseName)
+		SELECT [Name]
+		FROM sysdatabases WHERE [name] NOT IN (N'master',N'model',N'msdb',N'tempdb') 
+		AND [name] IN (@CurrentDB,'DTS_MASTER');
+
+		SELECT @DatabaseCount = COUNT(*)
+		FROM @Databases;
+
+		-- Get the list of stored procs for all databases.
+		SET @DatabaseLoop = 1;
+		WHILE @DatabaseLoop <= @DatabaseCount
+		BEGIN
+			SELECT @DatabaseName = DatabaseName
+			FROM @Databases
+			WHERE ID = @DatabaseLoop;
+
+			SET @SQL = 'INSERT INTO #StoredProcs (DatabaseName,ProcName) SELECT ''' + @DatabaseName +''',name FROM '+@DatabaseName+'..sysobjects WHERE xtype IN (''P'',''F'')';
+			exec sp_executesql @SQL;
+
+			SET @DatabaseLoop = @DatabaseLoop + 1;
+		END;
+		
+		IF NOT EXISTS(SELECT ID FROM #StoredProcs WHERE DatabaseName = @CurrentDB AND ProcName = @proc)
+		BEGIN
+			INSERT INTO @Info (Info) VALUES (N'Error: Stored proc');
+			INSERT INTO @Info (Info) VALUES (@proc);
+			INSERT INTO @Info (Info) VALUES (N'wasn`t found');
+			INSERT INTO @Info (Info) VALUES (N'in database');
+			INSERT INTO @Info (Info) VALUES (@CurrentDB);
+			SELECT Info FROM @Info ORDER BY ID;
+		END ELSE
+		BEGIN
+			-- Add This one proc into the list of procedures to process.
+			INSERT INTO @ProcsToProcess (DatabaseName,ProcName,History) VALUES(@CurrentDb,@proc,'');
+			SET @ProcsToProcessCount = 1;
+			-- Process all the procs in @ProcsToProcess. More might be added. This is how recursion is handled.
+			SET @ProcsToProcessLoop = 1;
+			WHILE @ProcsToProcessLoop <= @ProcsToProcessCount
+			BEGIN
+				SELECT @ProcName = ProcName,
+				@DatabaseName = DatabaseName,
+				@History = History
+				FROM @ProcsToProcess
+				WHERE ID = @ProcsToProcessLoop;
+
+				-- GET THE DATA FOR THIS PROCEDURE.
+				DELETE FROM #ProcData;
+
+				SET @SQL = N'INSERT INTO #ProcData (ProcData) SELECT SC.text FROM '+@DatabaseName+'..syscomments AS SC INNER JOIN '+@DatabaseName+'..sysobjects AS SO ON SC.id = SO.id WHERE SO.xtype IN (''P'',''F'') AND SO.name = '''+@ProcName+''' ORDER BY SC.colid';
+				EXEC sp_executesql @SQL;
+
+				SELECT @ProcDataCount = MAX(ID),
+				@ProcDataLoop = MIN(ID)
+				FROM #ProcData;
+
+				SET @ProcSQL = N'';
+				WHILE @ProcDataLoop <= @ProcDataCount
+				BEGIN
+					SELECT @SQL = ProcData
+					FROM #ProcData
+					WHERE ID = @ProcDataLoop;
+
+					SET @ProcSQL = @ProcSQL + @SQL;
+					SET @ProcDataLoop = @ProcDataLoop + 1;
+				END;
+
+				-- Look for other procedures in this procedure.
+				INSERT INTO @ProcsToProcess (DatabaseName,ProcName,History)
+				SELECT SP.DatabaseName,SP.ProcName,@History + (CASE WHEN @DatabaseName = @CurrentDB THEN N'-->' ELSE N'-->' + @DatabaseName + 'N..' END) + @ProcName
+				FROM #StoredProcs as SP
+				LEFT JOIN @ProcsToProcess AS PP
+				ON SP.DatabaseName = PP.DatabaseName
+				AND SP.ProcName = PP.ProcName
+				WHERE PP.ID IS NULL
+				AND CHARINDEX(SP.ProcName,@ProcSQL) > 0
+				AND ((SP.DatabaseName = @DatabaseName)
+				OR (SP.DatabaseName <> @DatabaseName AND (CHARINDEX(SP.DatabaseName+'..'+SP.ProcName,@ProcSQL) > 0 OR CHARINDEX(SP.DatabaseName+'.dbo.'+SP.ProcName,@ProcSQL) > 0 OR CHARINDEX(SP.DatabaseName+'].[dbo].['+SP.ProcName,@ProcSQL) > 0)));
+
+				SET @ProcsToProcessCount = @ProcsToProcessCount + ISNULL(@@ROWCOUNT,0);
+
+				SET @Search1 = CHARINDEX(@var,@ProcSQL);
+				IF @Search1 > 0
+				BEGIN
+					-- This variable is used in this procedure.
+					-- Look for 3 examples of its use.
+					SET @Example1 = CASE WHEN @Search1 < 25 THEN SUBSTRING(@ProcSQL,1,50) ELSE SUBSTRING(@ProcSQL,@Search1-25,50) END;
+					SET @Example2 = N'';
+					SET @Example3 = N'';
+					SET @Example4 = N'';
+					SET @Example5 = N'';
+					SET @Example6 = N'';
+					SET @Search2 = CHARINDEX(@var,@ProcSQL,@Search1+1);
+					IF @Search2 > 0
+					BEGIN
+						SET @Example2 = CASE WHEN @Search2 < 25 THEN SUBSTRING(@ProcSQL,1,50) ELSE SUBSTRING(@ProcSQL,@Search2-25,50) END;
+						SET @Search1 = CHARINDEX(@var,@ProcSQL,@Search2+1);
+						IF @Search1 > 0
+						BEGIN
+							SET @Example3 = CASE WHEN @Search1 < 25 THEN SUBSTRING(@ProcSQL,1,50) ELSE SUBSTRING(@ProcSQL,@Search1-25,50) END;
+							SET @Search2 = CHARINDEX(@var,@ProcSQL,@Search1+1);
+							IF @Search2 > 0
+							BEGIN
+								SET @Example4 = CASE WHEN @Search2 < 25 THEN SUBSTRING(@ProcSQL,1,50) ELSE SUBSTRING(@ProcSQL,@Search2-25,50) END;
+								SET @Search1 = CHARINDEX(@var,@ProcSQL,@Search2+1);
+								IF @Search1 > 0
+								BEGIN
+									SET @Example5 = CASE WHEN @Search1 < 25 THEN SUBSTRING(@ProcSQL,1,50) ELSE SUBSTRING(@ProcSQL,@Search1-25,50) END;
+									SET @Search2 = CHARINDEX(@var,@ProcSQL,@Search1+1);
+									IF @Search2 > 0
+									BEGIN
+										SET @Example6 = CASE WHEN @Search2 < 25 THEN SUBSTRING(@ProcSQL,1,50) ELSE SUBSTRING(@ProcSQL,@Search2-25,50) END;
+									END;
+								END;
+							END;
+						END;
+					END;
+					INSERT INTO @Found (DatabaseName,ProcName,History,Example1,Example2,Example3,Example4,Example5,Example6)
+					VALUES (@DatabaseName,@ProcName,@History + (CASE WHEN @DatabaseName = @CurrentDB THEN N'-->' ELSE @DatabaseName + '-->N..' END) + @ProcName
+					,@Example1,@Example2,@Example3,@Example4,@Example5,@Example6);
+				END;
+
+				SET @ProcsToProcessLoop = @ProcsToProcessLoop + 1
+			END;
+			SELECT DatabaseName,ProcName,History,Example1,Example2,Example3,Example4,Example5,Example6
+			FROM @Found
+			ORDER BY ID;
+
+			SELECT DatabaseName,ProcName,History
+			FROM @ProcsToProcess
+			ORDER BY ID;	
+		END;
+	END;
+	DROP TABLE #StoredProcs;
+	DROP TABLE #ProcData;
+	
+END
+GO
+
