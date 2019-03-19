@@ -1,0 +1,259 @@
+CREATE PROCEDURE sp_CreateUserDefinedType
+	@Action VARCHAR(50) = NULL,
+	@UserDefinedType VARCHAR(200) = NULL,
+	@Definition NVARCHAR(MAX) = NULL
+AS
+BEGIN
+	-- Run this proc without any parameters for help on it.
+	DECLARE @SQL NVARCHAR(MAX);
+	DECLARE @ProcCount INT;
+	DECLARE @ProcLoop INT;
+	DECLARE @ProcSQLCount INT;
+	DECLARE @ProcSQLLoop INT;
+	DECLARE @ProcID INT;	
+	DECLARE @ProcName SYSNAME;
+	DECLARE @CreatedTransaction BIT;
+	DECLARE @ErrorMessage NVARCHAR(4000);  
+	DECLARE @ErrorSeverity INT;  
+	DECLARE @ErrorState INT;
+	DECLARE @ErrorNumber INT;
+	DECLARE @ErrorLine INT;
+
+	SET NOCOUNT ON;
+	DECLARE @Info TABLE
+	(
+		Info VARCHAR(500)
+	)
+	DECLARE @Procs TABLE
+	(
+		ID INT IDENTITY(1,1),
+		ProcID INT,
+		ProcName SYSNAME
+	)
+	DECLARE @ProcSQL TABLE
+	(
+		ProcID INT,
+		ProcSQL NVARCHAR(MAX),
+		SortOrder INT	
+	)
+	IF ISNULL(@Action,'') NOT IN ('CREATE','LIST','ALTER','FORCE','DROP','KILL')
+	BEGIN
+		INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType @Action,@UserDefinedType,@Definition');
+		INSERT INTO @Info (Info) VALUES ('This proc solves the problem of what if');
+		INSERT INTO @Info (Info) VALUES ('you want to change a user defined type');
+		INSERT INTO @Info (Info) VALUES ('and a procedure is currently using it.');
+		INSERT INTO @Info (Info) VALUES ('Creates, drops, or alters a user defined type');
+		INSERT INTO @Info (Info) VALUES ('@Action can be one of the following values:');
+		INSERT INTO @Info (Info) VALUES ('CREATE - Drop/Creates a new user defined type.');
+		INSERT INTO @Info (Info) VALUES (' Only works if no proc is using it.');
+		INSERT INTO @Info (Info) VALUES ('LIST - Lists all the procedures');
+		INSERT INTO @Info (Info) VALUES (' using this user defined type.');
+		INSERT INTO @Info (Info) VALUES ('DROP - Drops the type IF it`s not being used.');
+		INSERT INTO @Info (Info) VALUES ('KILL - Drops the type AND all procs using it.');
+		INSERT INTO @Info (Info) VALUES ('ALTER - Drops all the procs using');
+		INSERT INTO @Info (Info) VALUES (' it, drops the type, creates the new');
+		INSERT INTO @Info (Info) VALUES (' type, then recreates the new procedures.');
+		INSERT INTO @Info (Info) VALUES ('FORCE - Similar to ALTER, except:');
+		INSERT INTO @Info (Info) VALUES (' 1. ALTER will fail if the change would');
+		INSERT INTO @Info (Info) VALUES ('    cause a stored proc to fail to compile.');
+		INSERT INTO @Info (Info) VALUES (' 2. If this user defined type would cause a');
+		INSERT INTO @Info (Info) VALUES ('    proc to not compile, FORCE drops that');
+		INSERT INTO @Info (Info) VALUES ('    proc, then lists it.');
+		INSERT INTO @Info (Info) VALUES ('Check out other cool tools like');
+		INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable')
+		INSERT INTO @Info (Info) VALUES ('sp_DropColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_Find')
+		INSERT INTO @Info (Info) VALUES ('sp_FindColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInProc')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs')
+		INSERT INTO @Info (Info) VALUES ('sp_List')		
+		INSERT INTO @Info (Info) VALUES ('sp_varinsp')
+	
+		SELECT Info from @Info;
+		RETURN;
+	END;
+	SET @ProcCount = 0;
+	SET @CreatedTransaction = 0;
+	BEGIN TRY
+		IF TYPE_ID(@UserDefinedType) IS NOT NULL
+		BEGIN
+			-- Get the procedures that use this 
+			INSERT INTO @Procs(ProcID,ProcName)
+			select distinct so.id,so.name
+			from sysobjects as so
+			inner join syscolumns as sc
+			on so.id = sc.id
+			inner join systypes as t
+			on sc.xusertype = t.xusertype
+			where so.xtype='P'
+			and t.name = @UserDefinedType;
+
+			SET @ProcCount = @@ROWCOUNT;
+
+			IF @Action IN ('CREATE','DROP') AND @ProcCount > 0
+			BEGIN
+				INSERT INTO @Info (Info) VALUES ('Type '+@UserDefinedType);
+				INSERT INTO @Info (Info) VALUES ('already exists and is being');
+				INSERT INTO @Info (Info) VALUES ('used by the following procs:');
+				INSERT INTO @Info (Info)
+				SELECT ProcName
+				FROM @Procs
+				ORDER BY ProcName;
+
+				SELECT Info FROM @Info;
+				RETURN;
+			END
+
+			IF @Action = 'LIST'
+			BEGIN
+				-- List the procs using that user defined type.
+				IF @ProcCount = 0
+				BEGIN
+					SELECT 'There are no procs using ' + @UserDefinedType as Info;
+				END ELSE
+				BEGIN
+					INSERT INTO @Info (Info) VALUES ('Procs using '+@UserDefinedType);
+					INSERT INTO @Info (Info)
+					SELECT ProcName
+					FROM @Procs
+					ORDER BY ProcName;
+
+					SELECT Info FROM @Info;
+				END;
+
+				RETURN;
+			END
+			
+			IF @Action <> 'KILL'
+			BEGIN	
+				-- Get the sql of the procedures.
+				INSERT INTO @ProcSQL (ProcID,ProcSQL,SortOrder)
+				SELECT id,[Text],sc.colid
+				FROM syscomments as sc
+				WHERE id in (SELECT ProcID FROM @Procs);
+			END;
+
+			BEGIN TRAN
+			SET @CreatedTransaction = 1;
+				
+			-- Drop the procedures.
+			SET @ProcLoop = 1;
+			WHILE @ProcLoop <= @ProcCount
+			BEGIN
+				SELECT @SQL = N'DROP PROCEDURE '+ProcName
+				,@ProcName = ProcName
+				FROM @Procs
+				WHERE ID = @ProcLoop;
+
+				EXEC sp_executesql @SQL;
+
+				SET @ProcLoop = @ProcLoop + 1;
+			END;
+						
+			-- Drop the old user defined type.
+			SET @SQL = N'DROP TYPE '+@UserDefinedType;
+			exec sp_executesql @SQL;
+		END ELSE
+		BEGIN
+			IF @Action = 'LIST'
+			BEGIN
+				SELECT 'User defined type '+@UserDefinedType+' doesn`t exist.' as Info;
+				RETURN;
+			END;
+		END;
+
+		IF @CreatedTransaction = 0
+		BEGIN
+			BEGIN TRAN
+			SET @CreatedTransaction = 1;
+		END;
+
+		-- Create the new user defined type.
+		IF @Action IN ('CREATE','FORCE','ALTER') AND LEN(@Definition) > 0
+		BEGIN
+			EXEC sp_executesql @Definition;
+			
+			IF @ProcCount > 0
+			BEGIN
+				-- Recreate the procedures.
+				SET @ProcLoop = 1;
+				WHILE @ProcLoop <= @ProcCount
+				BEGIN
+					-- Get the proc sql.
+					SELECT @ProcID = ProcID
+					,@ProcName = ProcName
+					FROM @Procs AS P
+					WHERE P.ID = @ProcLoop;
+
+					SELECT @ProcSQLCount = COUNT(*)
+					FROM @ProcSQL
+					WHERE ProcID = @ProcID;
+
+					SET @SQL = N'';
+					SET @ProcSQLLoop = 1;
+					WHILE @ProcSQLLoop <= @ProcSQLCount
+					BEGIN
+						SELECT @SQL = @SQL + ProcSQL
+						FROM @ProcSQL
+						WHERE ProcID = @ProcID
+						AND SortOrder = @ProcSQLLoop;
+
+						SET @ProcSQLLoop = @ProcSQLLoop + 1;
+					END;
+
+					IF @Action = 'FORCE'
+					BEGIN
+						-- Try to recreate the stored proc. 
+						-- If there's an error, report the 
+						-- error and leave the proc dropped.
+						BEGIN TRY
+							EXEC sp_executesql @SQL;
+						END TRY
+						BEGIN CATCH
+							SET @ErrorNumber = ERROR_NUMBER();
+							SET @ErrorLine = ERROR_LINE();
+							SET @ErrorMessage = 'Error rebuilding proc ' + @ProcName + ':' + CONVERT(VARCHAR,@ErrorNumber) + ':' + ERROR_MESSAGE() + ' on line ' + CONVERT(VARCHAR,@ErrorLine);
+							
+							INSERT INTO @Info (Info)
+							VALUES (@ErrorMessage)
+						END CATCH
+					END ELSE
+					BEGIN			
+						-- If the proc fails, the entire transaction gets rolled back.
+						EXEC sp_executesql @SQL;
+					END;
+
+					SET @ProcLoop = @ProcLoop + 1;
+				END;				
+			END;
+		END;
+		COMMIT TRAN;
+		SET @CreatedTransaction = 0;
+		IF @Action = 'FORCE'
+		BEGIN
+			SELECT @ProcCount = COUNT(*) FROM @Info;
+			IF ISNULL(@ProcCount,0) = 0
+			BEGIN
+				INSERT INTO @Info (Info) VALUES('Completed with no errors');
+			END ELSE
+			BEGIN
+				SELECT Info FROM @Info;
+			END;
+		END;
+	END TRY
+	BEGIN CATCH		
+		SET @ErrorNumber = ERROR_NUMBER();
+		SET @ErrorLine = ERROR_LINE();
+		SET @ErrorMessage = 'Error ' + CONVERT(VARCHAR,@ErrorNumber) + ':' + ERROR_MESSAGE() + ' on line ' + CONVERT(VARCHAR,@ErrorLine);
+		SET @ErrorSeverity = ERROR_SEVERITY();
+		SET @ErrorState = ERROR_STATE();
+
+		IF @CreatedTransaction = 1
+		BEGIN
+			ROLLBACK TRAN;
+		END
+		RAISERROR(@ErrorMessage,@ErrorSeverity,@ErrorState);
+	END CATCH;	
+END
+GO
+
