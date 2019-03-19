@@ -1,0 +1,131 @@
+CREATE PROCEDURE sp_ColumnsInATable
+(@sTable SYSNAME = NULL)
+AS
+DECLARE @sColumns VARCHAR(8000)
+DECLARE @sColumn SYSNAME
+DECLARE @bHasSpace BIT
+
+DECLARE @ColumnList TABLE
+(
+	[ColumnName] VARCHAR(8000)
+);
+DECLARE @Info TABLE
+(
+	ID INT IDENTITY(1,1),
+	Info VARCHAR(500),
+	PRIMARY KEY(ID)
+);
+
+SET NOCOUNT ON
+
+IF @sTable IS NULL
+BEGIN
+	INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable {TableName}');
+	INSERT INTO @Info (Info) VALUES ('Lists the columns in {TableName}');
+	INSERT INTO @Info (Info) VALUES ('Lists them in a nice, easy to copy format.');
+	INSERT INTO @Info (Info) VALUES ('Check out other cool tools like');
+	INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType')
+	INSERT INTO @Info (Info) VALUES ('sp_DropColumn')
+	INSERT INTO @Info (Info) VALUES ('sp_Find')
+	INSERT INTO @Info (Info) VALUES ('sp_FindColumn')
+	INSERT INTO @Info (Info) VALUES ('sp_FindInProc')
+	INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs')
+	INSERT INTO @Info (Info) VALUES ('sp_List')		
+	INSERT INTO @Info (Info) VALUES ('sp_varinsp')
+	INSERT INTO @Info (Info) VALUES ('Choose a table:');
+	INSERT INTO @Info (Info) 
+	SELECT O.[name]
+	from sysobjects as O
+	WHERE O.xtype='U'
+	ORDER BY O.[name];
+
+	SELECT Info FROM @Info ORDER BY ID;
+END ELSE
+BEGIN
+SET @sColumns = ''
+
+DECLARE ColumnCursor CURSOR FOR
+SELECT distinct SC.[name] as ColumnName
+FROM sysobjects AS O 
+INNER JOIN syscolumns as SC
+ON O.id=SC.id
+INNER JOIN systypes as ST
+ON SC.xtype = ST.xtype
+WHERE O.xtype='U'
+AND O.[name] = @sTable
+
+OPEN ColumnCursor
+
+FETCH NEXT FROM ColumnCursor
+INTO @sColumn
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+	IF LEN(@sColumns)>60
+	BEGIN
+		INSERT INTO @ColumnList (ColumnName)
+		VALUES (@sColumns + ',')
+
+		SET @sColumns = ''
+	END
+
+	IF LEN(@sColumns) > 0
+	BEGIN
+		SET @sColumns = @sColumns + ','
+	END
+
+	SET @bHasSpace = 0
+
+	IF CHARINDEX(' ',@sColumn) > 0
+	BEGIN
+		SET @bHasSpace = 1
+	END
+
+	IF CHARINDEX('$',@sColumn) > 0
+	BEGIN
+		SET @bHasSpace = 1
+	END
+
+	IF CHARINDEX(',',@sColumn) > 0
+	BEGIN
+		SET @bHasSpace = 1
+	END
+
+	IF CHARINDEX('#',@sColumn) > 0
+	BEGIN
+		SET @bHasSpace = 1
+	END
+
+	IF @bHasSpace <> 0
+	BEGIN
+		SET @sColumns = @sColumns + '['
+	END
+
+	SET @sColumns = @sColumns + @sColumn
+
+	IF @bHasSpace <> 0
+	BEGIN
+		SET @sColumns = @sColumns + ']'
+	END
+
+	FETCH NEXT FROM ColumnCursor
+	INTO @sColumn
+END
+
+IF LEN(@sColumns)>0
+BEGIN
+	INSERT INTO @ColumnList (ColumnName)
+	VALUES (@sColumns)
+END
+
+
+CLOSE ColumnCursor
+
+DEALLOCATE ColumnCursor
+
+SELECT ColumnName 
+FROM @ColumnList
+
+END
+GO
+
