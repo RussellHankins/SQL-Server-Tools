@@ -3,7 +3,7 @@
   <li>sp_ColumnsInATable - Lists the columns in a table in a comma delimited list. Useful to copy and paste to a select or insert statement.</li>
   <li>sp_CreateForeignKey - Given a primary table, primary key, foreign table, foreign key, output the sql to create the foreign key.</li>
   <li>sp_CreateUserDefinedType - Helps deal with issues of user defined types such as not being able to update it because it's being used. 6 actions are available:
-  <ol type='1'><li>CREATE - Drop/Creates a new user defined type. Only works if no proc is using it.</li>
+  <ol><li>CREATE - Drop/Creates a new user defined type. Only works if no proc is using it.</li>
     <li>LIST - Lists all the procedures using this user defined type.</li>
     <li>DROP - Drops the type IF it's not being used.</li>
     <li>KILL - Drops the type AND all procs using it.</li>
