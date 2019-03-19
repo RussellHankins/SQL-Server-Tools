@@ -1,0 +1,138 @@
+CREATE PROCEDURE sp_List
+	@ProcName varchar(200)=''
+AS
+BEGIN
+	SET NOCOUNT ON;
+	DECLARE @Loop INT
+	DECLARE @Count INT
+	DECLARE @Database VARCHAR(200)
+	DECLARE @SQL NVARCHAR(4000)
+	DECLARE @StoredProcText NVARCHAR(4000)
+	DECLARE @Search INT
+	DECLARE @Enter NVARCHAR(2)
+	CREATE TABLE #Output
+	(
+		[RowID] INT IDENTITY(1,1),
+		[Database] VARCHAR(200),
+		[StoredProcText] NTEXT
+	)
+    DECLARE @Databases TABLE
+	(
+		[DatabaseID] INT IDENTITY(1,1),
+		[Database] VARCHAR(200)
+	)
+	DECLARE @ActualOutput TABLE
+	(
+		[Database] VARCHAR(200),
+		[StoredProcText] NTEXT
+	)		
+
+    IF LEN(ISNULL(@ProcName,''))=0
+	BEGIN
+		DECLARE @Info TABLE
+		(
+			Info VARCHAR(100)
+		)
+		INSERT INTO @Info (Info) VALUES ('sp_List {StoredProc}')
+		INSERT INTO @Info (Info) VALUES ('Lists the stored procedure.')
+		INSERT INTO @Info (Info) VALUES ('If an exact match is found')
+		INSERT INTO @Info (Info) VALUES ('then the contents of the stored')
+		INSERT INTO @Info (Info) VALUES ('procedure is listed.')
+		INSERT INTO @Info (Info) VALUES ('Otherwise, stored procedures that')
+		INSERT INTO @Info (Info) VALUES ('are similar to it are listed.')
+		INSERT INTO @Info (Info) VALUES ('Looks in all databases.')		
+		INSERT INTO @Info (Info) VALUES ('')
+		INSERT INTO @Info (Info) VALUES ('Check out other cool tools like')
+		INSERT INTO @Info (Info) VALUES ('sp_ColumnsInATable')
+		INSERT INTO @Info (Info) VALUES ('sp_CreateUserDefinedType')
+		INSERT INTO @Info (Info) VALUES ('sp_DropColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_Find')
+		INSERT INTO @Info (Info) VALUES ('sp_FindColumn')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInProc')
+		INSERT INTO @Info (Info) VALUES ('sp_FindInAllProcs')
+		INSERT INTO @Info (Info) VALUES ('sp_varinsp')
+						
+		SELECT Info from @Info
+		RETURN
+	END
+
+	INSERT INTO @Databases ([Database])
+	SELECT name from sysdatabases where name not in ('master','tempdb','model','msdb')
+
+	SET @Count = @@ROWCOUNT
+	SET @Loop = 1
+	WHILE @Loop <= @Count
+	BEGIN		
+		SELECT @Database = [Database]
+		FROM @Databases
+		WHERE DatabaseID = @Loop
+		
+		BEGIN TRY
+			SET @SQL = N'INSERT INTO #Output([Database],StoredProcText) SELECT ''' + @Database + ''',sc.text from ' + @Database + '..sysobjects as so inner join ' + @Database + '..syscomments as sc on so.id = sc.id WHERE so.xtype = ''P'' AND so.NAME = ''' + @ProcName + ''' order BY sc.colid'
+			EXEC sp_sqlexec @SQL
+		END TRY
+		BEGIN CATCH
+		END CATCH
+		SET @Loop = @Loop + 1
+	END
+
+	SET @Enter = CHAR(13)
+	SELECT @Count = COUNT(*) FROM #Output
+
+	IF @Count = 0
+	BEGIN
+		SELECT @Count = COUNT(*) FROM @Databases
+		SET @Loop = 1
+		WHILE @Loop <= @Count
+		BEGIN
+			SELECT @Database = [Database]
+			FROM @Databases
+			WHERE DatabaseID = @Loop
+		
+			BEGIN TRY
+				SET @SQL = N'INSERT INTO #Output([Database],StoredProcText) SELECT ''' + @Database + ''',name from ' + @Database + '..sysobjects WHERE xtype = ''P'' AND NAME LIKE ''%' + @ProcName + '%'' order BY name'
+				EXEC sp_sqlexec @SQL
+			END TRY
+			BEGIN CATCH
+			END CATCH
+			SET @Loop = @Loop + 1
+		END
+
+		SELECT [Database],[StoredProcText] as [Matching Stored Procs] FROM #Output				
+	END ELSE
+	BEGIN
+		SET @Loop = 1
+		WHILE @Loop <= @Count
+		BEGIN
+			SET @StoredProcText = ''
+			BEGIN TRY
+				SELECT @Database = [Database],
+				@StoredProcText = StoredProcText
+				FROM #Output
+				WHERE RowID = @Loop
+			END TRY
+			BEGIN CATCH
+			END CATCH
+
+			SET @Search = 1
+			WHILE @Search > 0 AND LEN(@StoredProcText)>0
+			BEGIN
+				SET @Search = 0
+				SET @Search = CHARINDEX(@Enter,@StoredProcText)
+				IF @Search > 0
+				BEGIN
+					INSERT INTO @ActualOutput ([Database],StoredProcText) VALUES (@Database,SUBSTRING(@StoredProcText,1,@Search-1))
+					SET @StoredProcText = SUBSTRING(@StoredProcText,@Search+1,LEN(@StoredProcText)-@Search)
+				END
+			END
+			INSERT INTO @ActualOutput ([Database],StoredProcText) VALUES (@Database,@StoredProcText)
+			SET @Loop = @Loop + 1
+		END
+
+		SELECT [Database],StoredProcText
+		FROM @ActualOutput	
+	END	
+	DROP TABLE #Output
+END
+GO
+
