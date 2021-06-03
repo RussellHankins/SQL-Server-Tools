@@ -17,5 +17,6 @@
   <li>sp_FindInAllProcs - Searches all databases in all procedures for the text you specified. If you specify two parameters, both are used. A good use for this is to search for a table name and the word insert.</li>
   <li>sp_FindInProc - Searches the current databases in all procedures for the text you specified. If you specify two parameters, both are used. A good use for this is to search for a table name and the word insert.</li>
   <li>sp_List - Lists a stored procedure if an exact match is found to what you passed in. Otherwise, lists stored procedures containing that string.</li>
+  <li>sp_ListFields - Lists the columns in a table. Also displays field types, column comments and foreign key relationships.</li>
   <li>sp_varinsp - Searches a stored procedure you specify for a text string you specify. Recursively searches all the procedures this procedure calls also. Will output a tree diagram of where the text is in and how to traverse there in the stored procedure heirarchy.</li>
 </ul>
