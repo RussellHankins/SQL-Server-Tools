@@ -19,4 +19,5 @@
   <li>sp_List - Lists a stored procedure if an exact match is found to what you passed in. Otherwise, lists stored procedures containing that string.</li>
   <li>sp_ListFields - Lists the columns in a table. Also displays field types, column comments and foreign key relationships.</li>
   <li>sp_varinsp - Searches a stored procedure you specify for a text string you specify. Recursively searches all the procedures this procedure calls also. Will output a tree diagram of where the text is in and how to traverse there in the stored procedure heirarchy.</li>
+  <li>fn_SplitPK - Split a comma delimited list of integers into a table. Assumes that the list is unique. The table is indexed. This helps for inner joining with large tables.</li>
 </ul>
